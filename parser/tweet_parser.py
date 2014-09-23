@@ -1,6 +1,6 @@
 '''parser for event-related tweets
 using format provided by Chris Cassa and Megan Williams'''
-import time
+import re, sys, time
 
 class TweetParser(object):
     def __init__(self, tweet_file_name):
@@ -81,10 +81,7 @@ class TweetParser(object):
         for top_token in self.top_token_list:
             arff_file.write("@ATTRIBUTE %s {0,1}\n" %(top_token))
         #for test file, tweet class is unknown
-        if test_file:
-            arff_file.write("@ATTRIBUTE tweet_class {POSITIVE,NEGATIVE,?}\n")  
-        else:
-            arff_file.write("@ATTRIBUTE tweet_class {POSITIVE,NEGATIVE}\n")  
+        arff_file.write("@ATTRIBUTE tweet_class {POSITIVE,NEGATIVE,?}\n")  
         arff_file.write("@DATA\n")      
         tweet_file = open(self.tweet_file_name,'r')
         tweet_network_hash = {}
@@ -93,7 +90,7 @@ class TweetParser(object):
         lctr = 0
         for line in tweet_file.read().split("\r"):
             lctr+=1
-            #if lctr%100 == 0: print "line ctr: ", lctr
+            if lctr%10000 == 0: print "line ctr: ", lctr
             #assume file is tsv
             tweet_objs = line.split("\t")
             if len(tweet_objs) != 15: 
@@ -138,8 +135,13 @@ class TweetParser(object):
             user_profile_loc = tweet_objs[8]
             user_profile_loc = "\"" + user_profile_loc.replace("\"","").replace(",","").replace("\\","") + "\""
             if tweet_objs[9]:
-                user_created_at_tstruct = time.strptime(tweet_objs[9], "%a %b %d %H:%M:%S +0000 %Y")
-                user_created_at_tstamp = time.mktime(user_created_at_tstruct)
+                try:
+                    user_created_at_tstruct = time.strptime(tweet_objs[9], "%a %b %d %H:%M:%S +0000 %Y")
+                    user_created_at_tstamp = time.mktime(user_created_at_tstruct)
+                except Exception, e:
+                    #badly formatted time string
+                    user_created_at_tstamp = 0
+                    continue
             else:
                 user_created_at_tstamp = 0
             user_followers_count = tweet_objs[10]
@@ -150,7 +152,7 @@ class TweetParser(object):
             user_time_zone = "\"" + user_time_zone.replace("\"","").replace(",","") + "\""
             #for test file, tweet class unknown
             if test_file:
-                tweet_class = "?"
+                tweet_class = "NEGATIVE"
             else:
                 tweet_class = tweet_objs[14]
             #arff_file.write(",".join([str(x) for x in [created_at_tstamp, created_at_dayofweek, created_at_hour, \
@@ -181,7 +183,15 @@ class TweetParser(object):
             #if lctr%100 == 0: print "line ctr: ", lctr
             #assume file is tsv
             tweet_objs = line.split("\t")
-            text = tweet_objs[6]
+            try:
+                text = tweet_objs[6]
+            except Exception, e:
+                #for corrupted lines
+                continue
+            #remove non-printable characters
+            #text = re.sub('[\0\200-\377]', '', text)
+            #for now, only output ascii text
+            text = unicode(text,errors='ignore')
             text = text.replace("\"","").replace(",","").replace("\\","").replace("'","")
             tokens = text.split()
             for token in tokens:
@@ -194,17 +204,155 @@ class TweetParser(object):
         for st in sorted_tokens:
             token_file.write("%s,%i\n" %(st[0],st[1]))            
         token_file.close()
-            
-if __name__ == '__main__':
-    #tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
-    #tp = TweetParser(tweet_file_name)
-    #tp.get_stop_words()
-    #tp.token_distribution()
-    #tp.parse_file_arff(test_file=False)
-    #parse test file
-    test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle raw tweets.txt"
-    tp = TweetParser(tweet_file_name)
+    
+    def parse_possible_tweets(self, reference_file_name):
+        #parse likely event-related tweets out of a tweet file
+        #uses reference file with tweet class predictions
+        reference_file = open(reference_file_name,'r')
+        start_lines = True
+        end_lines = False
+        candidates = []
+        for line in reference_file:
+            #skip the start lines
+            if start_lines:
+                if not "inst#,    actual, predicted, error, probability distribution" in line:
+                    continue
+                else:
+                    start_lines = False
+                    continue
+            #skip the end lines
+            elif end_lines:
+                continue
+            else:
+                #blank lines
+                if len(line) < 5:
+                    continue
+                else:                
+                    #beginning of end lines
+                    if "=== Evaluation on test set ===" in line:
+                        end_lines = True
+                        continue
+                    #lines with data:
+                    else:
+                        try:
+                            stats = [x for x in line.split() if x]
+                            #output: instance number, actual value, predicted value, (error as +), P(pos), P(neg), P(?)
+                            if len(stats) == 6:
+                                inst, actual, predicted, pos, neg, q = stats
+                            elif len(stats) == 7:
+                                inst, actual, predicted, error, pos, neg, q = stats
+                            else:
+                                print "wrong number of elements: ", line
+                        except Exception, e:
+                            print "line: ", line.split()
+                            break
+                        #grab all candidate line numbers
+                        if actual != predicted or float(pos) > 0.01:
+                            candidates.append(int(inst)) 
+        reference_file.close()
+        #sort candidates for easy iteration, use as a queue
+        candidates = sorted(candidates)
+        #now grab candidate lines from larger file and store separately
+        tweet_file = open(self.tweet_file_name,'r')
+        candidate_file = open(self.dataset_name+"_candidates.txt","w")
+        candidate_file.write("\t".join(["created_at","favorited","in_reply_to_screen_name","lang","permanent link",
+                            "source","text","user profile description","user profile location","user_created_at",
+                            "user_followers_count","user_name","user_screen_name","user_time_zone"])+"\n")
+        lctr = 0
+        for line in tweet_file.read().split("\r"):
+            #if have removed all lines from candidates, stop
+            if not candidates:
+                break
+            lctr+=1
+            if lctr == candidates[0]:    
+                candidates.pop(0)
+                candidate_file.write(line+"\n")        
+        tweet_file.close()
+        candidate_file.close()
+        
+    def parse_file_nodexl(self):
+        #parse a file of candidate tweets into a NodeXL network / edgelist
+        self.candidate_file = open(self.tweet_file_name,'r')
+        self.network_file_name = self.dataset_name + "_nodexl.csv"
+        self.network_file = open(self.network_file_name,'w')
+        lctr = 0
+        for line in self.candidate_file:
+            lctr+=1
+            #skip header
+            if lctr==1: continue
+            #get columns
+            created_at,favorited,in_reply_to_screen_name,lang,permanent link,source,text,\
+            user profile description,user profile location,user_created_at,\
+            user_followers_count,user_name,user_screen_name,user_time_zone = line.strip().split("\t")
+            #get timestamp
+            created_at_tstruct = time.strptime(created_at, "%a %b %d %H:%M:%S +0000 %Y")
+            created_at_tstamp = time.mktime(created_at_tstruct)
+            #get source
+            tweet_source = user_screen_name
+            #get target, if any, also edge type
+            if in_reply_to_screen_name:
+                tweet_target = in_reply_to_screen_name
+                edge_type = "Reply"
+            else:
+                if "RT " in text:
+                    tweet_target = text.split("RT ")[1].split(" ")[0]
+                elif "via " in text:
+                    tweet_target = text.split("via ")[1].split(" ")[0]
+                edge_type = "Retweet"
+            else:
+                tweet_target = tweet_source
+                edge_type = "Tweet"
+            #get metadata: does text have link? does text have Call# (official code)?
+            if "http" in text:
+                has_link = 1
+            else:
+                has_link = 0
+            if "Call#" in text:
+                has_call_number = 1
+            else:
+                has_call_number = 0            
+        self.candidate_file.close()
+        self.network_file.close()
+        
+
+def train_file(fn):
+    print "building training token set"
+    tp = TweetParser(fn)
     tp.get_stop_words()
     tp.token_distribution()
-    tp.parse_file_arff(test_file=True)
+    tp.parse_file_arff(test_file=False)
+    return tp
+
+def test_file(fn, tp):
+    print "testing on large file"
+    tp_test = TweetParser(test_tweet_file_name)    
+    tp_test.top_token_list = tp.top_token_list
+    tp_test.top_tokens = tp.top_tokens
+    tp_test.parse_file_arff(test_file=True)
+    return tp_test
+    
+def candidate_file(fn, ref_fn):
+    print "grabbing candidates"
+    tp_test = TweetParser(fn)
+    tp_test.parse_possible_tweets(ref_fn)
+    return tp_test
+    
+if __name__ == '__main__':
+    parse_options = sys.argv[1]
+    #train file
+    if parse_options == "train":
+        tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        tp = train_file(tweet_file_name)
+    #test file
+    elif parse_options == "test":
+        tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        tp = train_file(tweet_file_name)
+        #parse test file
+        test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle_raw_tweets.txt"
+        tp_test = test_file(test_tweet_file_name, tp)
+    #grab candidates from test file to smaller subset
+    elif parse_options == "candidates":    
+        test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle_raw_tweets.txt"
+        ref_file_name = "/Users/vdb5/Documents/research/real world tweets/bayes_network_prediction_newest_outputs.txt"
+        tp_test = candidate_file(test_tweet_file_name, ref_file_name)
     
