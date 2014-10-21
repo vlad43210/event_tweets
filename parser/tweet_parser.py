@@ -247,14 +247,14 @@ class TweetParser(object):
                             print "line: ", line.split()
                             break
                         #grab all candidate line numbers
-                        if actual != predicted or float(pos) > 0.01:
+                        if actual != predicted or float(pos) > 0.99:
                             candidates.append(int(inst)) 
         reference_file.close()
         #sort candidates for easy iteration, use as a queue
         candidates = sorted(candidates)
         #now grab candidate lines from larger file and store separately
         tweet_file = open(self.tweet_file_name,'r')
-        candidate_file = open(self.dataset_name+"_candidates.txt","w")
+        candidate_file = open(self.dataset_name+"_candidates_precise.txt","w")
         candidate_file.write("\t".join(["created_at","favorited","in_reply_to_screen_name","lang","permanent link",
                             "source","text","user profile description","user profile location","user_created_at",
                             "user_followers_count","user_name","user_screen_name","user_time_zone"])+"\n")
