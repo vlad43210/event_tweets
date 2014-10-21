@@ -276,17 +276,31 @@ class TweetParser(object):
         self.network_file_name = self.dataset_name + "_nodexl.csv"
         self.network_file = open(self.network_file_name,'w')
         lctr = 0
+        self.network_file.write("source,target,edge_type,has_link,has_call_number,created_at_tstamp,favorited,lang,text,user_profile_description,\
+                                 user_created_at_tstamp,user_followers_count,user_name,user_screen_name,user_time_zone\n")
         for line in self.candidate_file:
             lctr+=1
             #skip header
             if lctr==1: continue
             #get columns
-            created_at,favorited,in_reply_to_screen_name,lang,permanent link,source,text,\
-            user profile description,user profile location,user_created_at,\
-            user_followers_count,user_name,user_screen_name,user_time_zone = line.strip().split("\t")
+            components = line.strip().split("\t")
+            if len(components) != 14:
+                print "badly formatted line"
+                continue
+            created_at,favorited,in_reply_to_screen_name,lang,permanent_link,source,text,\
+            user_profile_description,user_profile_location,user_created_at,\
+            user_followers_count,user_name,user_screen_name,user_time_zone = components                    
             #get timestamp
             created_at_tstruct = time.strptime(created_at, "%a %b %d %H:%M:%S +0000 %Y")
             created_at_tstamp = time.mktime(created_at_tstruct)
+            #get created_at_timestamp
+            try:
+                user_created_at_tstruct = time.strptime(user_created_at, "%a %b %d %H:%M:%S +0000 %Y")
+                user_created_at_tstamp = time.mktime(user_created_at_tstruct)
+            except Exception, e:
+                #badly formatted time string
+                user_created_at_tstamp = 0
+                continue
             #get source
             tweet_source = user_screen_name
             #get target, if any, also edge type
@@ -296,12 +310,13 @@ class TweetParser(object):
             else:
                 if "RT " in text:
                     tweet_target = text.split("RT ")[1].split(" ")[0]
+                    edge_type = "Retweet"
                 elif "via " in text:
                     tweet_target = text.split("via ")[1].split(" ")[0]
-                edge_type = "Retweet"
-            else:
-                tweet_target = tweet_source
-                edge_type = "Tweet"
+                    edge_type = "Retweet"
+                else:
+                    tweet_target = tweet_source
+                    edge_type = "Tweet"
             #get metadata: does text have link? does text have Call# (official code)?
             if "http" in text:
                 has_link = 1
@@ -310,7 +325,9 @@ class TweetParser(object):
             if "Call#" in text:
                 has_call_number = 1
             else:
-                has_call_number = 0            
+                has_call_number = 0   
+            self.network_file.write(",".join([str(x).replace(",","") for x in tweet_source, tweet_target, edge_type, has_link, has_call_number, created_at_tstamp, favorited, lang, text, \
+                                             user_profile_description, user_created_at_tstamp, user_followers_count, user_name, user_screen_name, user_time_zone])+"\n")         
         self.candidate_file.close()
         self.network_file.close()
         
@@ -337,6 +354,10 @@ def candidate_file(fn, ref_fn):
     tp_test.parse_possible_tweets(ref_fn)
     return tp_test
     
+def nodexl_file(fn):
+    tp_nodexl = TweetParser(fn)
+    tp_nodexl.parse_file_nodexl()
+    
 if __name__ == '__main__':
     parse_options = sys.argv[1]
     #train file
@@ -355,4 +376,10 @@ if __name__ == '__main__':
         test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle_raw_tweets.txt"
         ref_file_name = "/Users/vdb5/Documents/research/real world tweets/bayes_network_prediction_newest_outputs.txt"
         tp_test = candidate_file(test_tweet_file_name, ref_file_name)
+    #process candidates file as nodexl network
+    elif parse_options == "nodexl":
+        test_candidate_file_name = "/Users/vdb5/Dropbox/real world tweets/Seattle_raw_tweets_candidates.txt"
+        nodexl_file(test_candidate_file_name)
+        
+        
     
