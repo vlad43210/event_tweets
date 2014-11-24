@@ -57,12 +57,14 @@ class TweetParser(object):
     def parse_file_arff(self,test_file=False):
         arff_file = open(self.dataset_name+".arff","w")
         #comments
-        arff_file.write("%% %s\n" %(self.dataset_name))
+        #replace spaces in dataset name
+        arff_file.write("%% %s\n" %(self.dataset_name.replace(" ","_")))
         #relation name
         arff_file.write("@RELATION %s\n" %(self.dataset_name.split("/")[-1]))
         #blank space
         arff_file.write("\n")
         #attribute_names
+        arff_file.write("@ATTRIBUTE lctr NUMERIC\n")
         arff_file.write("@ATTRIBUTE created_at_tstamp NUMERIC\n")
         arff_file.write("@ATTRIBUTE created_at_dayofweek NUMERIC\n")
         arff_file.write("@ATTRIBUTE created_at_hour NUMERIC\n")                
@@ -90,6 +92,8 @@ class TweetParser(object):
         lctr = 0
         for line in tweet_file.read().split("\r"):
             lctr+=1
+            #skip first line
+            if lctr==1: continue
             if lctr%10000 == 0: print "line ctr: ", lctr
             #assume file is tsv
             tweet_objs = line.split("\t")
@@ -155,11 +159,14 @@ class TweetParser(object):
                 tweet_class = "NEGATIVE"
             else:
                 tweet_class = tweet_objs[14]
+                if not tweet_objs[14]:
+                    print "missing class label in training set"
+                    continue
             #arff_file.write(",".join([str(x) for x in [created_at_tstamp, created_at_dayofweek, created_at_hour, \
             #                          favorited, in_reply_to, lang, source, text, user_profile_desc, \
             #                          user_profile_loc,user_created_at_tstamp, user_followers_count, \
             #                          user_name, user_screen_name, user_time_zone, tweet_class]])+"\n")
-            arff_file.write(",".join([str(x) for x in [created_at_tstamp, created_at_dayofweek, created_at_hour, \
+            arff_file.write(",".join([str(x) for x in [lctr, created_at_tstamp, created_at_dayofweek, created_at_hour, \
                                       user_created_at_tstamp, user_followers_count] + raw_token_vector + \
                                       [tweet_class]])+"\n")
         tweet_file.close()
@@ -205,7 +212,7 @@ class TweetParser(object):
             token_file.write("%s,%i\n" %(st[0],st[1]))            
         token_file.close()
     
-    def parse_possible_tweets(self, reference_file_name):
+    def parse_possible_tweets(self, instance_file_name, reference_file_name):
         #parse likely event-related tweets out of a tweet file
         #uses reference file with tweet class predictions
         reference_file = open(reference_file_name,'r')
@@ -252,6 +259,28 @@ class TweetParser(object):
         reference_file.close()
         #sort candidates for easy iteration, use as a queue
         candidates = sorted(candidates)
+        #now get the line numbers
+        line_numbers = []
+        #arff file for grabbing raw tweet line numbers from instance numbers
+        instance_file = open(instance_file_name,'r')
+        #start grabbing line numbers after @DATA in arff file
+        start_extract_lines = False
+        ictr = 0
+        for iline in instance_file:
+            if not start_extract_lines:
+                if iline.strip()=="@DATA":
+                    start_extract_lines = True
+                continue
+            else:
+                #if have run out of candidates before EOF, move on
+                if not candidates: 
+                    continue
+                ictr+=1
+                lnum = int(iline.split(",")[0])
+                if ictr == candidates[0]:
+                    candidates.pop(0)
+                    line_numbers.append(lnum)
+        instance_file.close()
         #now grab candidate lines from larger file and store separately
         tweet_file = open(self.tweet_file_name,'r')
         candidate_file = open(self.dataset_name+"_candidates_precise.txt","w")
@@ -261,11 +290,11 @@ class TweetParser(object):
         lctr = 0
         for line in tweet_file.read().split("\r"):
             #if have removed all lines from candidates, stop
-            if not candidates:
+            if not line_numbers:
                 break
             lctr+=1
-            if lctr == candidates[0]:    
-                candidates.pop(0)
+            if lctr == line_numbers[0]: 
+                line_numbers.pop(0)
                 candidate_file.write(line+"\n")        
         tweet_file.close()
         candidate_file.close()
@@ -348,10 +377,10 @@ def test_file(fn, tp):
     tp_test.parse_file_arff(test_file=True)
     return tp_test
     
-def candidate_file(fn, ref_fn):
+def candidate_file(fn, i_fn, ref_fn):
     print "grabbing candidates"
     tp_test = TweetParser(fn)
-    tp_test.parse_possible_tweets(ref_fn)
+    tp_test.parse_possible_tweets(i_fn, ref_fn)
     return tp_test
     
 def nodexl_file(fn):
@@ -362,20 +391,23 @@ if __name__ == '__main__':
     parse_options = sys.argv[1]
     #train file
     if parse_options == "train":
-        tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        #tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        tweet_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_tweets_for_classification_numsremoved.txt"
         tp = train_file(tweet_file_name)
     #test file
     elif parse_options == "test":
-        tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        #tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/all_instances_seattle.txt"
+        tweet_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_tweets_for_classification_numsremoved.txt"
         tp = train_file(tweet_file_name)
         #parse test file
-        test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle_raw_tweets.txt"
+        test_tweet_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_raw_tweets.txt"
         tp_test = test_file(test_tweet_file_name, tp)
     #grab candidates from test file to smaller subset
     elif parse_options == "candidates":    
-        test_tweet_file_name = "/Users/vdb5/Documents/research/real world tweets/Seattle_raw_tweets.txt"
-        ref_file_name = "/Users/vdb5/Documents/research/real world tweets/bayes_network_prediction_newest_outputs.txt"
-        tp_test = candidate_file(test_tweet_file_name, ref_file_name)
+        test_tweet_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_raw_tweets.txt"
+        instance_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_raw_tweets.arff"
+        ref_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/bayes_network_prediction_second_set.txt"
+        tp_test = candidate_file(test_tweet_file_name, instance_file_name, ref_file_name)
     #process candidates file as nodexl network
     elif parse_options == "nodexl":
         test_candidate_file_name = "/Users/vdb5/Dropbox/real world tweets/Seattle_raw_tweets_candidates.txt"

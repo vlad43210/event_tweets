@@ -1,0 +1,19 @@
+% all_instances
+@RELATION all_instances
+
+@ATTRIBUTE created_at_tstamp NUMERIC
+@ATTRIBUTE created_at_dayofweek NUMERIC
+@ATTRIBUTE created_at_hour NUMERIC
+@ATTRIBUTE favorited {TRUE,FALSE}
+@ATTRIBUTE in_reply_to STRING
+@ATTRIBUTE lang STRING
+@ATTRIBUTE source STRING
+@ATTRIBUTE text STRING
+@ATTRIBUTE user_profile_desc STRING
+@ATTRIBUTE user_profile_loc STRING
+@ATTRIBUTE user_created_at_tstamp NUMERIC
+@ATTRIBUTE user_followers_count NUMERIC
+@ATTRIBUTE user_name STRING
+@ATTRIBUTE user_screen_name STRING
+@ATTRIBUTE user_time_zone STRING
+@ATTRIBUTE tweet_class {POSITIVE,NEGATIVE}
