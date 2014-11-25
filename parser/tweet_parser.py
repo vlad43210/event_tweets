@@ -314,11 +314,17 @@ class TweetParser(object):
             #get columns
             components = line.strip().split("\t")
             if len(components) != 14:
-                print "badly formatted line"
-                continue
-            created_at,favorited,in_reply_to_screen_name,lang,permanent_link,source,text,\
-            user_profile_description,user_profile_location,user_created_at,\
-            user_followers_count,user_name,user_screen_name,user_time_zone = components                    
+                if len(components) == 13:
+                    created_at,favorited,in_reply_to_screen_name,lang,permanent_link,source,text,\
+                    user_profile_description,user_profile_location,user_created_at,\
+                    user_followers_count,user_name,user_screen_name = components
+                    user_time_zone = None
+                else:
+                    print "badly formatted line, length: ", len(components), " components: ", components
+            else:
+                created_at,favorited,in_reply_to_screen_name,lang,permanent_link,source,text,\
+                user_profile_description,user_profile_location,user_created_at,\
+                user_followers_count,user_name,user_screen_name,user_time_zone = components                    
             #get timestamp
             created_at_tstruct = time.strptime(created_at, "%a %b %d %H:%M:%S +0000 %Y")
             created_at_tstamp = time.mktime(created_at_tstruct)
@@ -410,7 +416,8 @@ if __name__ == '__main__':
         tp_test = candidate_file(test_tweet_file_name, instance_file_name, ref_file_name)
     #process candidates file as nodexl network
     elif parse_options == "nodexl":
-        test_candidate_file_name = "/Users/vdb5/Dropbox/real world tweets/Seattle_raw_tweets_candidates.txt"
+        #test_candidate_file_name = "/Users/vdb5/Dropbox/real world tweets/Seattle_raw_tweets_candidates.txt"
+        test_candidate_file_name = "/Users/vdb5/Documents/work/projects/chris cassa collaboration/Seattle_raw_tweets_candidates_precise.txt"
         nodexl_file(test_candidate_file_name)
         
         
